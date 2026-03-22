@@ -2,6 +2,14 @@ export const runtime = 'edge';
 
 const MAX_ATTACHMENT_BYTES = 4 * 1024 * 1024;
 
+/** Tarayıcı farklı origin’den POST + FormData için; aynı origin’de de zararı yok. */
+const corsHeaders: Record<string, string> = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Max-Age': '86400',
+};
+
 function escapeHtml(s: string): string {
   return s
     .replace(/&/g, '&amp;')
@@ -23,11 +31,31 @@ function arrayBufferToBase64(buf: ArrayBuffer): string {
 }
 
 export default async function handler(request: Request): Promise<Response> {
-  if (request.method === 'OPTIONS') {
-    return new Response(null, { status: 204 });
+  const method = request.method.toUpperCase();
+
+  if (method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: corsHeaders });
   }
-  if (request.method !== 'POST') {
-    return json({ error: 'Method not allowed' }, 405);
+
+  if (method === 'GET') {
+    return json(
+      {
+        ok: true,
+        message: 'Teklif formu POST ile gönderilir; bu adres tarayıcıda test içindir.',
+      },
+      200
+    );
+  }
+
+  if (method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+      status: 405,
+      headers: {
+        ...corsHeaders,
+        'content-type': 'application/json; charset=utf-8',
+        Allow: 'GET, POST, OPTIONS',
+      },
+    });
   }
 
   const key = process.env.RESEND_API_KEY;
@@ -142,6 +170,9 @@ export default async function handler(request: Request): Promise<Response> {
 function json(payload: Record<string, unknown>, status: number): Response {
   return new Response(JSON.stringify(payload), {
     status,
-    headers: { 'content-type': 'application/json; charset=utf-8' },
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+      ...corsHeaders,
+    },
   });
 }
