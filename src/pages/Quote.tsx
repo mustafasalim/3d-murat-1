@@ -3,6 +3,20 @@ import { motion } from 'motion/react';
 import { Zap, Info, Rotate3d, Loader2 } from 'lucide-react';
 
 const QUOTE_API = (import.meta.env.VITE_QUOTE_API_URL as string | undefined)?.trim() || '/api/quote';
+const MAX_STL_BYTES = 4 * 1024 * 1024;
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => {
+      const data = r.result as string;
+      const i = data.indexOf(',');
+      resolve(i >= 0 ? data.slice(i + 1) : data);
+    };
+    r.onerror = () => reject(new Error('Dosya okunamadı'));
+    r.readAsDataURL(file);
+  });
+}
 
 export default function Quote() {
   const [quantity, setQuantity] = useState(1);
@@ -40,25 +54,42 @@ export default function Quote() {
         notes.trim() ? `Not: ${notes.trim()}` : 'Not: —',
       ].join('\n');
 
-      const fd = new FormData();
-      fd.append('name', name.trim());
-      fd.append('email', email.trim());
-      fd.append('phone', phone.trim());
-      fd.append('material', material);
-      fd.append('quantity', String(quantity));
-      fd.append('notes', notes.trim());
-      fd.append('unitPrice', unitPrice.toFixed(2));
-      fd.append('totalPrice', totalPrice.toFixed(2));
-      fd.append('message', messageBody);
+      let attachmentBase64: string | undefined;
+      let attachmentName: string | undefined;
       if (stlFile) {
-        fd.append('attachment', stlFile, stlFile.name);
+        if (stlFile.size > MAX_STL_BYTES) {
+          setFormError(`STL en fazla ${MAX_STL_BYTES / (1024 * 1024)} MB olabilir.`);
+          return;
+        }
+        attachmentBase64 = await fileToBase64(stlFile);
+        attachmentName = stlFile.name;
       }
+
+      const payload = {
+        name: name.trim(),
+        email: email.trim(),
+        phone: phone.trim(),
+        material,
+        quantity: String(quantity),
+        notes: notes.trim(),
+        unitPrice: unitPrice.toFixed(2),
+        totalPrice: totalPrice.toFixed(2),
+        message: messageBody,
+        ...(attachmentBase64
+          ? { attachmentBase64, attachmentName: attachmentName ?? 'ek.stl' }
+          : {}),
+      };
 
       const ac = new AbortController();
       const timeout = setTimeout(() => ac.abort(), 120_000);
       let res: Response;
       try {
-        res = await fetch(QUOTE_API, { method: 'POST', body: fd, signal: ac.signal });
+        res = await fetch(QUOTE_API, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          signal: ac.signal,
+        });
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') {
           setFormError('İstek çok uzun sürdü (zaman aşımı). STL dosyasını küçültüp tekrar deneyin.');

@@ -1,14 +1,6 @@
-export const runtime = 'edge';
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 const MAX_ATTACHMENT_BYTES = 4 * 1024 * 1024;
-
-/** Tarayıcı farklı origin’den POST + FormData için; aynı origin’de de zararı yok. */
-const corsHeaders: Record<string, string> = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
-  'Access-Control-Max-Age': '86400',
-};
 
 function escapeHtml(s: string): string {
   return s
@@ -18,85 +10,73 @@ function escapeHtml(s: string): string {
     .replace(/"/g, '&quot;');
 }
 
-/** Edge’de büyük dosyada tek tek char birleştirmek dakikalar sürebilir; chunk ile çözülür. */
-function arrayBufferToBase64(buf: ArrayBuffer): string {
-  const bytes = new Uint8Array(buf);
-  const chunk = 8192;
-  let binary = '';
-  for (let i = 0; i < bytes.length; i += chunk) {
-    const sub = bytes.subarray(i, Math.min(i + chunk, bytes.length));
-    binary += String.fromCharCode.apply(null, sub as unknown as number[]);
-  }
-  return btoa(binary);
+function setCors(res: VercelResponse) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 }
 
-export default async function handler(request: Request): Promise<Response> {
-  const method = request.method.toUpperCase();
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  setCors(res);
 
-  if (method === 'OPTIONS') {
-    return new Response(null, { status: 204, headers: corsHeaders });
+  if (req.method === 'OPTIONS') {
+    res.status(204).end();
+    return;
   }
 
-  if (method === 'GET') {
-    return json(
-      {
-        ok: true,
-        message: 'Teklif formu POST ile gönderilir; bu adres tarayıcıda test içindir.',
-      },
-      200
-    );
-  }
-
-  if (method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
-      status: 405,
-      headers: {
-        ...corsHeaders,
-        'content-type': 'application/json; charset=utf-8',
-        Allow: 'GET, POST, OPTIONS',
-      },
+  if (req.method === 'GET') {
+    res.status(200).json({
+      ok: true,
+      message: 'Teklif için POST + JSON gövde (Content-Type: application/json) kullanın.',
     });
+    return;
+  }
+
+  if (req.method !== 'POST') {
+    res.setHeader('Allow', 'GET, POST, OPTIONS');
+    res.status(405).json({ error: 'Method not allowed' });
+    return;
   }
 
   const key = process.env.RESEND_API_KEY;
   if (!key) {
-    return json({ error: 'Sunucu yapılandırması eksik (RESEND_API_KEY).' }, 500);
+    res.status(500).json({ error: 'Sunucu yapılandırması eksik (RESEND_API_KEY).' });
+    return;
   }
 
-  let formData: FormData;
-  try {
-    formData = await request.formData();
-  } catch {
-    return json({ error: 'Form verisi okunamadı.' }, 400);
+  const body = req.body as Record<string, unknown> | undefined;
+  if (!body || typeof body !== 'object') {
+    res.status(400).json({ error: 'JSON gövde gerekli (Content-Type: application/json).' });
+    return;
   }
 
-  const name = String(formData.get('name') ?? '').trim();
-  const email = String(formData.get('email') ?? '').trim();
-  const phone = String(formData.get('phone') ?? '').trim();
-  const material = String(formData.get('material') ?? '').trim();
-  const quantity = String(formData.get('quantity') ?? '').trim();
-  const notes = String(formData.get('notes') ?? '').trim();
-  const unitPrice = String(formData.get('unitPrice') ?? '').trim();
-  const totalPrice = String(formData.get('totalPrice') ?? '').trim();
-  const message = String(formData.get('message') ?? '').trim();
+  const name = String(body.name ?? '').trim();
+  const email = String(body.email ?? '').trim();
+  const phone = String(body.phone ?? '').trim();
+  const material = String(body.material ?? '').trim();
+  const quantity = String(body.quantity ?? '').trim();
+  const notes = String(body.notes ?? '').trim();
+  const unitPrice = String(body.unitPrice ?? '').trim();
+  const totalPrice = String(body.totalPrice ?? '').trim();
+  const message = String(body.message ?? '').trim();
 
   if (!name || !email || !phone) {
-    return json({ error: 'Ad, e-posta ve telefon zorunludur.' }, 400);
+    res.status(400).json({ error: 'Ad, e-posta ve telefon zorunludur.' });
+    return;
   }
 
-  const file = formData.get('attachment');
   let attachments: { filename: string; content: string }[] | undefined;
-
-  if (file instanceof Blob && file.size > 0) {
-    if (file.size > MAX_ATTACHMENT_BYTES) {
-      return json(
-        { error: `Ek dosya en fazla ${MAX_ATTACHMENT_BYTES / (1024 * 1024)} MB olabilir (Vercel sınırı).` },
-        413
-      );
+  const b64 = body.attachmentBase64;
+  const attachmentName = String(body.attachmentName ?? 'ek.stl');
+  if (typeof b64 === 'string' && b64.length > 0) {
+    const buf = Buffer.from(b64, 'base64');
+    if (buf.length > MAX_ATTACHMENT_BYTES) {
+      res.status(413).json({
+        error: `Ek dosya en fazla ${MAX_ATTACHMENT_BYTES / (1024 * 1024)} MB olabilir.`,
+      });
+      return;
     }
-    const fname = file instanceof File ? file.name : 'ek.stl';
-    const base64 = arrayBufferToBase64(await file.arrayBuffer());
-    attachments = [{ filename: fname, content: base64 }];
+    attachments = [{ filename: attachmentName, content: b64 }];
   }
 
   const to = process.env.RESEND_TO_EMAIL ?? 'muratcankap16@gmail.com';
@@ -117,7 +97,7 @@ export default async function handler(request: Request): Promise<Response> {
     <pre style="font-family:ui-monospace,monospace;white-space:pre-wrap;font-size:13px;margin-top:16px;">${escapeHtml(message)}</pre>
   `;
 
-  const body: Record<string, unknown> = {
+  const payload: Record<string, unknown> = {
     from,
     to: [to],
     reply_to: email,
@@ -125,54 +105,42 @@ export default async function handler(request: Request): Promise<Response> {
     html,
   };
   if (attachments?.length) {
-    body.attachments = attachments;
+    payload.attachments = attachments;
   }
 
   const controller = new AbortController();
   const kill = setTimeout(() => controller.abort(), 25_000);
-  let res: Response;
+  let r: Response;
   try {
-    res = await fetch('https://api.resend.com/emails', {
+    r = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${key}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify(payload),
       signal: controller.signal,
     });
   } catch (e) {
     const aborted = e instanceof Error && e.name === 'AbortError';
-    return json(
-      {
-        error: aborted
-          ? 'İstek zaman aşımı (dosya çok büyük olabilir). Daha küçük STL deneyin.'
-          : 'E-posta sunucusuna bağlanılamadı.',
-      },
-      aborted ? 504 : 502
-    );
+    res.status(aborted ? 504 : 502).json({
+      error: aborted
+        ? 'İstek zaman aşımı (dosya çok büyük olabilir).'
+        : 'E-posta sunucusuna bağlanılamadı.',
+    });
+    return;
   } finally {
     clearTimeout(kill);
   }
 
-  const data = (await res.json().catch(() => ({}))) as { message?: string };
+  const data = (await r.json().catch(() => ({}))) as { message?: string };
 
-  if (!res.ok) {
-    return json(
-      { error: data.message ?? 'E-posta gönderilemedi.' },
-      res.status >= 400 ? res.status : 502
-    );
+  if (!r.ok) {
+    res.status(r.status >= 400 ? r.status : 502).json({
+      error: data.message ?? 'E-posta gönderilemedi.',
+    });
+    return;
   }
 
-  return json({ ok: true }, 200);
-}
-
-function json(payload: Record<string, unknown>, status: number): Response {
-  return new Response(JSON.stringify(payload), {
-    status,
-    headers: {
-      'content-type': 'application/json; charset=utf-8',
-      ...corsHeaders,
-    },
-  });
+  res.status(200).json({ ok: true });
 }
