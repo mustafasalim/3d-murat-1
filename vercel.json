@@ -2,9 +2,9 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "trailingSlash": false,
   "rewrites": [
-    {
-      "source": "/(.*)",
-      "destination": "/index.html"
-    }
+    { "source": "/hizmetler", "destination": "/index.html" },
+    { "source": "/portfolyo", "destination": "/index.html" },
+    { "source": "/iletisim", "destination": "/index.html" },
+    { "source": "/teklif-al", "destination": "/index.html" }
   ]
 }
