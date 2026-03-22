@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
 import { Zap, Info, Rotate3d, Loader2 } from 'lucide-react';
+import { getWeb3FormsAccessKey } from '../config/web3forms';
 
 const WEB3FORMS_ENDPOINT = 'https://api.web3forms.com/submit';
 
@@ -16,7 +17,7 @@ export default function Quote() {
   const [formError, setFormError] = useState<string | null>(null);
   const [formSuccess, setFormSuccess] = useState(false);
 
-  const accessKey = import.meta.env.VITE_WEB3FORMS_ACCESS_KEY as string | undefined;
+  const accessKey = getWeb3FormsAccessKey();
 
   const unitPrice = 450;
   const totalPrice = unitPrice * quantity;
@@ -26,9 +27,9 @@ export default function Quote() {
     setFormError(null);
     setFormSuccess(false);
 
-    if (!accessKey?.trim()) {
+    if (!accessKey.trim()) {
       setFormError(
-        'Web3Forms anahtarı yüklenmedi. Yerelde: .env içinde tam olarak VITE_WEB3FORMS_ACCESS_KEY=... yazın (VITE_ ön eki şart), kaydedin ve npm run dev ile sunucuyu yeniden başlatın. Vercel’de: .env repoya gitmez; Project → Settings → Environment Variables bölümüne aynı isimle anahtarı ekleyip yeniden deploy edin.'
+        'Anahtar bulunamadı. .env veya Vercel’de VITE_WEB3FORMS_ACCESS_KEY tanımlı olsun; değişiklikten sonra dev’i yeniden başlatın veya Vercel’de yeniden deploy edin.'
       );
       return;
     }

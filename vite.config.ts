@@ -16,8 +16,8 @@ export default defineConfig(({mode}) => {
     plugins: [react(), tailwindcss()],
     define: {
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-      // Vercel/CI: anahtar genelde process.env'de; .env dosyası yoksa da build'e girsin
-      'import.meta.env.VITE_WEB3FORMS_ACCESS_KEY': JSON.stringify(web3FormsKey),
+      // import.meta.env ile çakışabildiği için ayrı sabit (Vercel process.env buraya yazılır)
+      __WEB3FORMS_ACCESS_KEY__: JSON.stringify(web3FormsKey),
     },
     resolve: {
       alias: {
