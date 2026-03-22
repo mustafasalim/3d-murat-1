@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion } from 'motion/react';
 import { Zap, Info, Rotate3d, Loader2 } from 'lucide-react';
 
-const QUOTE_API = '/api/quote';
+const QUOTE_API = (import.meta.env.VITE_QUOTE_API_URL as string | undefined)?.trim() || '/api/quote';
 
 export default function Quote() {
   const [quantity, setQuantity] = useState(1);
@@ -54,14 +54,29 @@ export default function Quote() {
         fd.append('attachment', stlFile, stlFile.name);
       }
 
-      const res = await fetch(QUOTE_API, { method: 'POST', body: fd });
+      const ac = new AbortController();
+      const timeout = setTimeout(() => ac.abort(), 120_000);
+      let res: Response;
+      try {
+        res = await fetch(QUOTE_API, { method: 'POST', body: fd, signal: ac.signal });
+      } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') {
+          setFormError('İstek çok uzun sürdü (zaman aşımı). STL dosyasını küçültüp tekrar deneyin.');
+        } else {
+          setFormError('Bağlantı hatası. İnternetinizi kontrol edip tekrar deneyin.');
+        }
+        return;
+      } finally {
+        clearTimeout(timeout);
+      }
+
       const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
 
       if (!res.ok || !data.ok) {
         setFormError(
           data.error ??
             (import.meta.env.DEV
-              ? 'Yerelde Vite tek başına /api çalıştırmaz. Test için `vercel dev` veya Vercel’e deploy edin.'
+              ? 'Yerelde /api yoksa .env içine VITE_QUOTE_API_URL=https://...vercel.app/api/quote ekleyin veya `npx vercel dev` kullanın.'
               : 'Gönderim başarısız oldu. Lütfen tekrar deneyin.')
         );
         return;

@@ -10,12 +10,14 @@ function escapeHtml(s: string): string {
     .replace(/"/g, '&quot;');
 }
 
+/** Edge’de büyük dosyada tek tek char birleştirmek dakikalar sürebilir; chunk ile çözülür. */
 function arrayBufferToBase64(buf: ArrayBuffer): string {
   const bytes = new Uint8Array(buf);
+  const chunk = 8192;
   let binary = '';
-  const len = bytes.byteLength;
-  for (let i = 0; i < len; i++) {
-    binary += String.fromCharCode(bytes[i]!);
+  for (let i = 0; i < bytes.length; i += chunk) {
+    const sub = bytes.subarray(i, Math.min(i + chunk, bytes.length));
+    binary += String.fromCharCode.apply(null, sub as unknown as number[]);
   }
   return btoa(binary);
 }
@@ -57,15 +59,16 @@ export default async function handler(request: Request): Promise<Response> {
   const file = formData.get('attachment');
   let attachments: { filename: string; content: string }[] | undefined;
 
-  if (file instanceof File && file.size > 0) {
+  if (file instanceof Blob && file.size > 0) {
     if (file.size > MAX_ATTACHMENT_BYTES) {
       return json(
         { error: `Ek dosya en fazla ${MAX_ATTACHMENT_BYTES / (1024 * 1024)} MB olabilir (Vercel sınırı).` },
         413
       );
     }
+    const fname = file instanceof File ? file.name : 'ek.stl';
     const base64 = arrayBufferToBase64(await file.arrayBuffer());
-    attachments = [{ filename: file.name, content: base64 }];
+    attachments = [{ filename: fname, content: base64 }];
   }
 
   const to = process.env.RESEND_TO_EMAIL ?? 'muratcankap16@gmail.com';
@@ -97,14 +100,32 @@ export default async function handler(request: Request): Promise<Response> {
     body.attachments = attachments;
   }
 
-  const res = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${key}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
+  const controller = new AbortController();
+  const kill = setTimeout(() => controller.abort(), 25_000);
+  let res: Response;
+  try {
+    res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${key}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } catch (e) {
+    const aborted = e instanceof Error && e.name === 'AbortError';
+    return json(
+      {
+        error: aborted
+          ? 'İstek zaman aşımı (dosya çok büyük olabilir). Daha küçük STL deneyin.'
+          : 'E-posta sunucusuna bağlanılamadı.',
+      },
+      aborted ? 504 : 502
+    );
+  } finally {
+    clearTimeout(kill);
+  }
 
   const data = (await res.json().catch(() => ({}))) as { message?: string };
 

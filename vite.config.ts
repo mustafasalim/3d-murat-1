@@ -5,8 +5,35 @@ import {defineConfig, loadEnv} from 'vite';
 
 export default defineConfig(({mode}) => {
   const env = loadEnv(mode, process.cwd(), '');
+  const hasRemoteQuoteApi = Boolean(env.VITE_QUOTE_API_URL?.trim());
+
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [
+      {
+        name: 'dev-quote-api-fallback',
+        configureServer(server) {
+          if (hasRemoteQuoteApi) return;
+          server.middlewares.use((req, res, next) => {
+            const path = req.url?.split('?')[0] ?? '';
+            if (path === '/api/quote' && req.method === 'POST') {
+              res.statusCode = 503;
+              res.setHeader('Content-Type', 'application/json; charset=utf-8');
+              res.end(
+                JSON.stringify({
+                  ok: false,
+                  error:
+                    'Yerel Vite /api çalıştırmaz. .env içine VITE_QUOTE_API_URL=https://PROJE.vercel.app/api/quote ekleyin veya `npx vercel dev` kullanın.',
+                })
+              );
+              return;
+            }
+            next();
+          });
+        },
+      },
+      react(),
+      tailwindcss(),
+    ],
     define: {
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
     },
