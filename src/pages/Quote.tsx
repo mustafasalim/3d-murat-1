@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
 import { Zap, Info, Rotate3d, Loader2 } from 'lucide-react';
-import { getWeb3FormsAccessKey } from '../config/web3forms';
 
-const WEB3FORMS_ENDPOINT = 'https://api.web3forms.com/submit';
+const QUOTE_API = '/api/quote';
 
 export default function Quote() {
   const [quantity, setQuantity] = useState(1);
@@ -17,8 +16,6 @@ export default function Quote() {
   const [formError, setFormError] = useState<string | null>(null);
   const [formSuccess, setFormSuccess] = useState(false);
 
-  const accessKey = getWeb3FormsAccessKey();
-
   const unitPrice = 450;
   const totalPrice = unitPrice * quantity;
 
@@ -27,12 +24,6 @@ export default function Quote() {
     setFormError(null);
     setFormSuccess(false);
 
-    if (!accessKey.trim()) {
-      setFormError(
-        'Anahtar bulunamadı. .env veya Vercel’de VITE_WEB3FORMS_ACCESS_KEY tanımlı olsun; değişiklikten sonra dev’i yeniden başlatın veya Vercel’de yeniden deploy edin.'
-      );
-      return;
-    }
     if (!name.trim() || !email.trim() || !phone.trim()) {
       setFormError('Lütfen ad soyad, e-posta ve telefon alanlarını doldurun.');
       return;
@@ -40,32 +31,39 @@ export default function Quote() {
 
     setSubmitting(true);
     try {
+      const messageBody = [
+        `Malzeme: ${material}`,
+        `Adet: ${quantity}`,
+        `Tahmini birim fiyat (₺): ${unitPrice.toFixed(2)}`,
+        `Toplam (₺): ${totalPrice.toFixed(2)}`,
+        '',
+        notes.trim() ? `Not: ${notes.trim()}` : 'Not: —',
+      ].join('\n');
+
       const fd = new FormData();
-      fd.append('access_key', accessKey.trim());
-      fd.append('subject', '3D Murat — Hızlı Teklif Talebi');
       fd.append('name', name.trim());
       fd.append('email', email.trim());
       fd.append('phone', phone.trim());
-      fd.append(
-        'message',
-        [
-          `Malzeme: ${material}`,
-          `Adet: ${quantity}`,
-          `Tahmini birim fiyat (₺): ${unitPrice.toFixed(2)}`,
-          `Toplam (₺): ${totalPrice.toFixed(2)}`,
-          '',
-          notes.trim() ? `Not: ${notes.trim()}` : 'Not: —',
-        ].join('\n')
-      );
+      fd.append('material', material);
+      fd.append('quantity', String(quantity));
+      fd.append('notes', notes.trim());
+      fd.append('unitPrice', unitPrice.toFixed(2));
+      fd.append('totalPrice', totalPrice.toFixed(2));
+      fd.append('message', messageBody);
       if (stlFile) {
         fd.append('attachment', stlFile, stlFile.name);
       }
 
-      const res = await fetch(WEB3FORMS_ENDPOINT, { method: 'POST', body: fd });
-      const data = (await res.json()) as { success?: boolean; message?: string };
+      const res = await fetch(QUOTE_API, { method: 'POST', body: fd });
+      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
 
-      if (!res.ok || !data.success) {
-        setFormError(data.message ?? 'Gönderim başarısız oldu. Lütfen tekrar deneyin.');
+      if (!res.ok || !data.ok) {
+        setFormError(
+          data.error ??
+            (import.meta.env.DEV
+              ? 'Yerelde Vite tek başına /api çalıştırmaz. Test için `vercel dev` veya Vercel’e deploy edin.'
+              : 'Gönderim başarısız oldu. Lütfen tekrar deneyin.')
+        );
         return;
       }
 
