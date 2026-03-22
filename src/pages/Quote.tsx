@@ -28,7 +28,7 @@ export default function Quote() {
 
     if (!accessKey?.trim()) {
       setFormError(
-        'E-posta gönderimi için .env dosyasına VITE_WEB3FORMS_ACCESS_KEY ekleyin. Anahtarı web3forms.com adresinden (muratcankap16@gmail.com ile kayıt) alabilirsiniz.'
+        'Web3Forms anahtarı yüklenmedi. Yerelde: .env içinde tam olarak VITE_WEB3FORMS_ACCESS_KEY=... yazın (VITE_ ön eki şart), kaydedin ve npm run dev ile sunucuyu yeniden başlatın. Vercel’de: .env repoya gitmez; Project → Settings → Environment Variables bölümüne aynı isimle anahtarı ekleyip yeniden deploy edin.'
       );
       return;
     }
