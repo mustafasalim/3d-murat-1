@@ -1,13 +1,85 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { Upload, Zap, Info, CheckCircle, Clock, Ruler, Layers, Rotate3d } from 'lucide-react';
+import { Zap, Info, Rotate3d, Loader2 } from 'lucide-react';
+
+const WEB3FORMS_ENDPOINT = 'https://api.web3forms.com/submit';
 
 export default function Quote() {
   const [quantity, setQuantity] = useState(1);
   const [material, setMaterial] = useState('PLA - Standart Prototipleme');
-  
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [notes, setNotes] = useState('');
+  const [stlFile, setStlFile] = useState<File | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [formSuccess, setFormSuccess] = useState(false);
+
+  const accessKey = import.meta.env.VITE_WEB3FORMS_ACCESS_KEY as string | undefined;
+
   const unitPrice = 450;
   const totalPrice = unitPrice * quantity;
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setFormError(null);
+    setFormSuccess(false);
+
+    if (!accessKey?.trim()) {
+      setFormError(
+        'E-posta gönderimi için .env dosyasına VITE_WEB3FORMS_ACCESS_KEY ekleyin. Anahtarı web3forms.com adresinden (muratcankap16@gmail.com ile kayıt) alabilirsiniz.'
+      );
+      return;
+    }
+    if (!name.trim() || !email.trim() || !phone.trim()) {
+      setFormError('Lütfen ad soyad, e-posta ve telefon alanlarını doldurun.');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const fd = new FormData();
+      fd.append('access_key', accessKey.trim());
+      fd.append('subject', '3D Murat — Hızlı Teklif Talebi');
+      fd.append('name', name.trim());
+      fd.append('email', email.trim());
+      fd.append('phone', phone.trim());
+      fd.append(
+        'message',
+        [
+          `Malzeme: ${material}`,
+          `Adet: ${quantity}`,
+          `Tahmini birim fiyat (₺): ${unitPrice.toFixed(2)}`,
+          `Toplam (₺): ${totalPrice.toFixed(2)}`,
+          '',
+          notes.trim() ? `Not: ${notes.trim()}` : 'Not: —',
+        ].join('\n')
+      );
+      if (stlFile) {
+        fd.append('attachment', stlFile, stlFile.name);
+      }
+
+      const res = await fetch(WEB3FORMS_ENDPOINT, { method: 'POST', body: fd });
+      const data = (await res.json()) as { success?: boolean; message?: string };
+
+      if (!res.ok || !data.success) {
+        setFormError(data.message ?? 'Gönderim başarısız oldu. Lütfen tekrar deneyin.');
+        return;
+      }
+
+      setFormSuccess(true);
+      setName('');
+      setEmail('');
+      setPhone('');
+      setNotes('');
+      setStlFile(null);
+    } catch {
+      setFormError('Bağlantı hatası. İnternetinizi kontrol edip tekrar deneyin.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   return (
     <div className="min-h-screen pt-24 pb-12 bg-brand-dark">
@@ -27,7 +99,7 @@ export default function Quote() {
           {/* Left: Form Section */}
           <section className="lg:col-span-8 space-y-8">
             <div className="bg-brand-gray p-8 rounded-2xl border border-brand-accent/50 shadow-xl">
-              <form className="space-y-10" onSubmit={(e) => e.preventDefault()}>
+              <form className="space-y-10" onSubmit={handleSubmit} noValidate>
                 {/* STL Upload Area */}
                 <div className="relative group">
                   <label className="text-[10px] uppercase tracking-[0.2em] text-gray-500 mb-4 block font-bold">1. Model Yükleme (STL)</label>
@@ -35,11 +107,22 @@ export default function Quote() {
                     <div className="w-16 h-16 bg-brand-orange/10 rounded-full flex items-center justify-center text-brand-orange group-hover:scale-110 transition-transform">
                       <Rotate3d size={32} />
                     </div>
-                    <div className="text-center">
+                    <div className="text-center px-4">
                       <p className="font-medium text-white">STL Dosyanızı Sürükleyin veya Seçin</p>
-                      <p className="text-xs text-gray-500 mt-1 uppercase tracking-tighter">Maksimum dosya boyutu: 50MB</p>
+                      <p className="text-xs text-gray-500 mt-1 uppercase tracking-tighter">Maksimum dosya boyutu: 50MB · İsteğe bağlı</p>
+                      {stlFile && (
+                        <p className="text-xs text-brand-orange mt-2 font-medium break-all">{stlFile.name}</p>
+                      )}
                     </div>
-                    <input type="file" accept=".stl" className="absolute inset-0 opacity-0 cursor-pointer" />
+                    <input
+                      type="file"
+                      accept=".stl,.STL"
+                      className="absolute inset-0 opacity-0 cursor-pointer"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        setStlFile(f ?? null);
+                      }}
+                    />
                   </div>
                 </div>
 
@@ -74,6 +157,63 @@ export default function Quote() {
                   </div>
                 </div>
 
+                {/* Contact — teklif yanıtı için */}
+                <div className="space-y-6 pt-4 border-t border-brand-accent/30">
+                  <label className="text-[10px] uppercase tracking-[0.2em] text-gray-500 block font-bold">4. İletişim Bilgileri</label>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <label htmlFor="quote-name" className="text-xs text-gray-400">Ad Soyad *</label>
+                      <input
+                        id="quote-name"
+                        type="text"
+                        autoComplete="name"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        className="w-full bg-brand-dark border border-brand-accent rounded-xl px-4 py-3 focus:ring-2 focus:ring-brand-orange outline-none transition-all"
+                        placeholder="Adınız Soyadınız"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label htmlFor="quote-email" className="text-xs text-gray-400">E-posta *</label>
+                      <input
+                        id="quote-email"
+                        type="email"
+                        autoComplete="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        className="w-full bg-brand-dark border border-brand-accent rounded-xl px-4 py-3 focus:ring-2 focus:ring-brand-orange outline-none transition-all"
+                        placeholder="ornek@email.com"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2 md:col-span-2">
+                      <label htmlFor="quote-phone" className="text-xs text-gray-400">Telefon *</label>
+                      <input
+                        id="quote-phone"
+                        type="tel"
+                        autoComplete="tel"
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
+                        className="w-full bg-brand-dark border border-brand-accent rounded-xl px-4 py-3 focus:ring-2 focus:ring-brand-orange outline-none transition-all"
+                        placeholder="+90 5xx xxx xx xx"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2 md:col-span-2">
+                      <label htmlFor="quote-notes" className="text-xs text-gray-400">Ek not (isteğe bağlı)</label>
+                      <textarea
+                        id="quote-notes"
+                        value={notes}
+                        onChange={(e) => setNotes(e.target.value)}
+                        rows={3}
+                        className="w-full bg-brand-dark border border-brand-accent rounded-xl px-4 py-3 focus:ring-2 focus:ring-brand-orange outline-none transition-all resize-y min-h-[80px]"
+                        placeholder="Özel istekler, teslimat adresi vb."
+                      />
+                    </div>
+                  </div>
+                </div>
+
                 {/* Pricing Simulation */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-10 pt-8 border-t border-brand-accent/30">
                   <div className="space-y-2">
@@ -93,10 +233,34 @@ export default function Quote() {
                   </div>
                 </div>
 
+                {formError && (
+                  <p className="text-sm text-red-400 bg-red-950/40 border border-red-900/50 rounded-xl px-4 py-3" role="alert">
+                    {formError}
+                  </p>
+                )}
+                {formSuccess && (
+                  <p className="text-sm text-green-400 bg-green-950/40 border border-green-900/50 rounded-xl px-4 py-3" role="status">
+                    Teklif talebiniz alındı. En kısa sürede size dönüş yapılacaktır.
+                  </p>
+                )}
+
                 {/* Action Button */}
-                <button className="w-full bg-brand-orange hover:bg-orange-600 text-white py-6 rounded-xl font-black text-xl uppercase tracking-tighter flex items-center justify-center gap-3 transition-all active:scale-[0.98] shadow-lg shadow-orange-900/20">
-                  Teklifi Onayla ve Gönder
-                  <Zap size={24} fill="currentColor" />
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="w-full bg-brand-orange hover:bg-orange-600 disabled:opacity-60 disabled:pointer-events-none text-white py-6 rounded-xl font-black text-xl uppercase tracking-tighter flex items-center justify-center gap-3 transition-all active:scale-[0.98] shadow-lg shadow-orange-900/20"
+                >
+                  {submitting ? (
+                    <>
+                      <Loader2 size={24} className="animate-spin" />
+                      Gönderiliyor…
+                    </>
+                  ) : (
+                    <>
+                      Teklifi Onayla ve Gönder
+                      <Zap size={24} fill="currentColor" />
+                    </>
+                  )}
                 </button>
               </form>
             </div>
